@@ -50,6 +50,8 @@ class CfgNode(_CfgNode):
             loaded_ver, self.VERSION
         )
 
+        self.set_new_allowed(True)
+
         if loaded_ver == self.VERSION:
             self.merge_from_other_cfg(loaded_cfg)
         else:
