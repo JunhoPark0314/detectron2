@@ -254,6 +254,8 @@ class ProposalNetwork(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
+        self.vis_period = cfg.VIS_PERIOD
+        self.input_format = cfg.INPUT.FORMAT
         self.backbone = build_backbone(cfg)
         self.proposal_generator = build_proposal_generator(cfg, self.backbone.output_shape())
 
@@ -263,6 +265,34 @@ class ProposalNetwork(nn.Module):
     @property
     def device(self):
         return self.pixel_mean.device
+
+    def visualize_training(self, batched_inputs, proposals):
+        """
+        A function used to visualize images and proposals. It shows ground truth
+        bounding boxes on the original image and up to 20 top-scoring predicted
+        object proposals on the original image. Users can implement different
+        visualization functions for different models.
+
+        Args:
+            batched_inputs (list): a list that contains input to the model.
+            proposals (list): a list that contains predicted proposals. Both
+                batched_inputs and proposals should have the same length.
+        """
+        from detectron2.utils.visualizer import Visualizer
+
+        storage = get_event_storage()
+        max_vis_prop = 20
+
+        for input, prop in zip(batched_inputs, proposals):
+            img = input["image"]
+            img = convert_image_to_rgb(img.permute(1, 2, 0), self.input_format)
+            v_gt = Visualizer(img, None)
+            v_gt = v_gt.overlay_instances(boxes=input["instances"].gt_boxes)
+            anno_img = v_gt.get_image()
+            vis_img = anno_img.transpose(2, 0, 1)
+            vis_name = "GT bounding boxes"
+            storage.put_image(vis_name, vis_img)
+            break  # only visualize one image in a batch
 
     def forward(self, batched_inputs):
         """
@@ -292,6 +322,12 @@ class ProposalNetwork(nn.Module):
         proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
         # In training, the proposals are not useful at all but we generate them anyway.
         # This makes RPN-only models about 5% slower.
+
+        if self.vis_period > 0:
+            storage = get_event_storage()
+            if storage.iter % self.vis_period == 0:
+                self.visualize_training(batched_inputs, proposals)
+
         if self.training:
             return proposal_losses
 
